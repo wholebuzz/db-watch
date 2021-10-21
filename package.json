@@ -1,6 +1,6 @@
 {
   "name": "db-watch",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Create Postgres triggers and watch notify listeners",
   "author": "wholebuzz",
   "license": "Apache-2.0",
@@ -25,6 +25,7 @@
     "lib/**/*"
   ],
   "dependencies": {
+    "batch2": "^2.0.0",
     "sorted-array-functions": "^1.3.0",
     "through2": "^3.0.1",
     "tree-stream": "^1.0.11"
