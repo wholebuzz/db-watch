@@ -3799,10 +3799,10 @@ tr46@^2.1.0:
   dependencies:
     punycode "^2.1.1"
 
-tree-stream@^1.0.11:
-  version "1.0.11"
-  resolved "https://registry.yarnpkg.com/tree-stream/-/tree-stream-1.0.11.tgz#1c98628074adf7860ce12747ed019c41613eb0a3"
-  integrity sha512-SkRueY62XCSUfvK7OuifAE0d1NyFfrh5Hu1tDuHB1dimOcOq4ptEV1VuJRKi+hNzwF999CT7bs63qn3B2iGN4g==
+tree-stream@^1.0.13:
+  version "1.0.13"
+  resolved "https://registry.yarnpkg.com/tree-stream/-/tree-stream-1.0.13.tgz#acc9f3eeb53b88422e7bb8dd24c92f89ae9a54e9"
+  integrity sha512-X4F8ybPxKnNRTPAI1pZP/rGZ/JO4EDW/lA4LxPXmGSjhp1t36sMbfqGoul/Kh6F0/QAytE8Ygp7B/8ZmD2Z2GQ==
   dependencies:
     cloneable-readable "^2.0.1"
     end-of-stream "^1.1.0"
