@@ -1,0 +1,65 @@
+name: test
+on: [push]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:5.7.8
+        env:
+          MYSQL_DATABASE: test_db
+          MYSQL_USER: user
+          MYSQL_PASSWORD: password
+          MYSQL_ROOT_PASSWORD: rootpassword
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 3
+      postgres:
+        image: postgres
+        env:
+          POSTGRES_DB: test_db
+          POSTGRES_USER: admin
+          POSTGRES_PASSWORD: abracadabra
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+        ports:
+          - 5432:5432
+    steps:
+    - uses: actions/checkout@v2
+    - name: Use Node.js
+      uses: actions/setup-node@v1
+      with:
+        node-version: '12.x'
+    - name: Install dependencies
+      run: yarn --frozen-lockfile
+    - name: Build tree
+      run: yarn build
+    - name: Run tests
+      run: yarn test:coverage
+      shell: bash
+      env:
+        MYSQL_DB_USER: root
+        MYSQL_DB_PASS: rootpassword
+        MYSQL_DB_NAME: test_db
+        MYSQL_DB_HOST: 127.0.0.1
+        MYSQL_DB_PORT: 3306
+        POSTGRES_DB_USER: admin
+        POSTGRES_DB_PASS: abracadabra
+        POSTGRES_DB_NAME: postgres
+        POSTGRES_DB_HOST: 127.0.0.1
+        POSTGRES_DB_PORT: 5432
+    - name: Setup gcloud
+      uses: google-github-actions/setup-gcloud@master
+      with:
+        project_id: ${{ secrets.GCLOUD_PROJECT }}
+        service_account_key: ${{ secrets.GCLOUD_SA_KEY }}
+        export_default_credentials: true
+    - name: Upload test coverage
+      run: 'yarn badge:coverage && gsutil cp coverage/coverage.svg gs://wholebuzz/db-watch/coverage.svg'
+      shell: bash

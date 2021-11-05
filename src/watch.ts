@@ -1,17 +1,30 @@
-// import pSettle from 'p-settle'
+import pSettle from 'p-settle'
+import { dump } from './dump'
+import { DatabaseLoaderSource, DatabaseTable, Shard, shardMatchText } from './load'
 
-export interface DatabaseListener {
-  listen(channel: string, callback: (payload: UpdatedRow) => void): Promise<void>
+export enum WatchMethod {
+  Log,
+  Poll,
+  Trigger,
 }
 
-export interface DatabaseSink<Item> {
-  keyFields: string[]
-  insert: (item: Item) => Item | null
-  find: (update: UpdatedRow) => Item | null
-  remove: (update: UpdatedRow) => Item | null
-  update?: (record: Item, itemRecord: Record<string, any>) => void
-  updated?: (current: Item, row: Record<string, any>) => void
-  validate?: (row: Record<string, any>) => Item
+export enum AntiShardBehavior {
+  None,
+  Interleaved,
+  ShardFirst,
+  ShardLast,
+}
+
+export enum UpdateType {
+  Delta,
+  Full,
+  Key,
+}
+
+export enum UpdateOp {
+  Insert = 'INSERT',
+  Update = 'UPDATE',
+  Delete = 'DELETE',
 }
 
 export interface UpdatedRow {
@@ -22,17 +35,55 @@ export interface UpdatedRow {
   updated?: string[]
 }
 
-export enum UpdateOp {
-  Insert = 'INSERT',
-  Update = 'UPDATE',
-  Delete = 'DELETE',
+export interface DatabaseTableParser<Item> {
+  parseRow: (row: Record<string, any>) => Item
+  parseKey: (key: Record<string, any>) => Partial<Item>
 }
 
-/*
-export class DatabaseLoader<X> {
+export interface IdempotentDatabaseSink<Item> extends DatabaseTableParser<Item> {
+  load: (item: Item) => void
+  upsert: (key: Partial<Item>, value: Partial<Item> | null) => Item | null
+}
+
+export interface MemoryDatabaseSink<Item> extends Partial<DatabaseTableParser<Item>> {
+  insert: (item: Item) => Item
+  find: (key: Partial<Item>) => Item | null
+  remove: (key: Partial<Item>) => Item | null
+  update?: (current: Item, update: Partial<Item>) => void
+  updated?: (current: Item | null, update: Partial<Item> | null) => void
+}
+
+export interface DatabaseWatcherSink<Item> extends IdempotentDatabaseSink<Item> {
+  parseUpdate: (update: UpdatedRow) => Partial<Item>
+  fetchUpdate?: (update: UpdatedRow) => Promise<Item>
+  filterUpdate?: (item: UpdatedRow) => boolean
+}
+
+export abstract class DatabaseWatcherSource {
+  constructor(public watchMethod: WatchMethod, public updateType: UpdateType) {}
+  abstract watch(table: string, callback: (payload: UpdatedRow) => void): Promise<void>
+}
+
+export interface DatabaseWatcherOptions {
+  antiShardBehavior?: AntiShardBehavior
+  concurrency: number
+  debug?: boolean
+  shard?: Shard
+  shardField?: string
+  version?: Date
+}
+
+export class DatabaseLoader<Item> {
+  updateQueue: UpdatedRow[] = []
   loading = false
   loaded = false
-  updateQueue: UpdatedRow[] = []
+  version?: Date
+
+  constructor(
+    public source: DatabaseLoaderSource,
+    public table: DatabaseTable,
+    public sink: IdempotentDatabaseSink<Item>
+  ) {}
 
   startLoading() {
     this.loading = true
@@ -48,7 +99,7 @@ export class DatabaseLoader<X> {
 
   delayLoading(updateFn: (update: UpdatedRow) => void) {
     return (update: UpdatedRow) => {
-      if (this.loading) this.updateQeue.push(update)
+      if (this.loading) this.updateQueue.push(update)
       else updateFn(update)
     }
   }
@@ -61,37 +112,64 @@ export class DatabaseLoader<X> {
   }
 }
 
-export class DatabaseWatcher<X> extends DatabaseLoader<X> {
-  constructor(public listener: DatabaseListener, public sink: DatabaseSink<X>) {}
-
-  async listen(channel: string) {
-    this.listener.listen(
-           'event_updated',
-                   this.delayLoadingWithFetchQueue(() => this.fetchAndUpdateEvents())
-                         ),
-
-  async fetchAndUpdate(
-    filterFn: (update: UpdatedRow) => boolean,
-    parseFn: (update: UpdatedRow) => X,
-    fetchFn: (update: UpdatedRow) => Promise<X>,
-    updateFn: (update: UpdatedRow) => void,
-    concurrency = 2,
-    debug = false
+export class DatabaseWatcher<Item> extends DatabaseLoader<Item> {
+  constructor(
+    public source: DatabaseLoaderSource,
+    public watcher: DatabaseWatcherSource,
+    public table: DatabaseTable,
+    public sink: DatabaseWatcherSink<Item>,
+    public options: DatabaseWatcherOptions
   ) {
+    super(source, table, sink)
+  }
+
+  async watch() {
+    this.watcher.watch(
+      this.table.table,
+      this.watcher.updateType == UpdateType.Key
+        ? this.delayLoadingWithFetchQueue(() => this.fetchAndUpdate())
+        : this.delayLoading((x) => this.handleUpdatedRow(x))
+    )
+  }
+
+  async init() {
+    // const start = Date.now()
+    this.startLoading()
+    await this.watch()
+    await this.initialLoad()
+  }
+
+  async initialLoad() {
+    await dump(
+      this.source.load(this.table, {
+        shard: this.options.shard,
+        version: this.options.version,
+      }),
+      this.sink.load
+    )
+    for (const delayedUpdate of this.doneLoading()) this.handleUpdatedRow(delayedUpdate)
+  }
+
+  async fetchAndUpdate() {
     if (this.loading || !this.updateQueue.length) return
     this.loading = true
     while (this.updateQueue.length) {
       const updates = this.updateQueue
-      if (debug) console.log(`fetchAndUpdate: queue=${updates.length}`)
+      if (this.options.debug) console.log(`fetchAndUpdate: queue=${updates.length}`)
       this.updateQueue = []
       const ready = await pSettle(
         updates
-          .filter(filterFn)
-          .map((x) => () => (x.op === 'DELETE' ? Promise.resolve(parseFn(x)) : fetchFn(x))),
-        { concurrency }
+          .filter(this.sink?.filterUpdate ?? ((x) => x))
+          .map(
+            (x) => () =>
+              x.op === UpdateOp.Delete
+                ? Promise.resolve(this.sink.parseUpdate(x))
+                : this.sink.fetchUpdate!(x)
+          ),
+        { concurrency: this.options.concurrency }
       )
       ready.forEach((x, i) =>
-        updateFn({
+        this.handleUpdatedRow({
           op: updates[i].op,
           key: updates[i].key,
           row: x.isFulfilled ? x.value : undefined,
@@ -100,78 +178,57 @@ export class DatabaseWatcher<X> extends DatabaseLoader<X> {
     }
     this.loading = false
   }
-}
 
-export function applyUpdatedRow<Item>(sink: DatabaseSink<Item>, update: UpdatedRow) {
-  if (!update.row) return null
-  switch (update.op) {
-    case UpdateOp.Insert:
-      return sink.insert(update.row as Item)
-
-    case UpdateOp.Update:
-      const item = sink.find(update.key)
-      if (item === undefined) {
-        return null
-      } else if (isUpdate) {
-        const keys = Object.keys(update.row)
-        const rekey = keyFields.some((k) => keys.includes(k))
-        if (rekey) {
-          const item = remove(key)
-          return insert({ ...item, ...update.row })
-        } else {
-          const currentItem = sink.getFn(key)
-          const record = currentItem as Record<string, any>
-          if (updated) updated(currentItem, update.row)
-          sink.update(record, update.row)
-						return currentItem
-        }
-      }
-      break
-
-    case UpdateOp.Remove:
-      remove(key)
-  }
-  return true
-}
-
-export function handleUpdatedRowItem<Item, Sink>(
-  op: string,
-  item: X,
-  sink: DatabaseSink<Item, Key>,
-  filter?: (x: X) => boolean,
-) {
-  const itemRecord = item as Record<string, any>
-  const isUpdate = op === 'UPDATE'
-  if (isUpdate || op === 'DELETE') {
-    const index = findIndex(item)
-    if (index < 0) {
-      if (!filter || filter(item)) return null
-    } else if (isUpdate) {
-      const currentItem = sink.getFn(key)
-      const record = currentItem as Record<string, any>
-      let rekey = false
-      keyFields.forEach(
-        (k) => (rekey = rekey || record[k] < itemRecord[k] || itemRecord[k] < record[k])
-      )
-      if (rekey) {
-        remove(index)
-        assignUpdate(record, itemRecord)
-        insert(currentItem)
-      } else {
-        if (updated) updated(currentItem, itemRecord)
-        assignUpdate(record, itemRecord)
-      }
-      return currentItem
-    } else return remove(index)
-  } else if (op === 'INSERT') {
-    if (!filter || filter(item)) {
-      insert(item)
-			return item
-    } else {
+  handleUpdatedRow(update: UpdatedRow) {
+    if (!update.row) return null
+    if (
+      this.options.shard &&
+      !shardMatchText(update.key[this.table.shardField ?? ''] ?? '', this.options.shard)
+    )
       return null
+    if (this.sink.filterUpdate && !this.sink.filterUpdate(update)) return null
+    const key = this.sink.parseKey(update.key)
+    const row = this.sink.parseUpdate(update)
+
+    switch (update.op) {
+      case UpdateOp.Insert:
+      case UpdateOp.Update:
+        return this.sink.upsert(key, row)
+
+      case UpdateOp.Delete:
+        return this.sink.upsert(key, null)
     }
-  } else {
-    return null
+  }
+}
+
+export function idempotentSinkFromMemorySink<Item>(
+  table: DatabaseTable,
+  sink: MemoryDatabaseSink<Item>
+): DatabaseWatcherSink<Item> {
+  const update = sink.update ?? assignProps
+  return {
+    upsert: (key: Partial<Item>, row: Partial<Item> | null) => {
+      const item = sink.find(key)
+      if (sink.updated) sink.updated(item, row)
+      if (!row) return sink.remove(key)
+      if (item) {
+        const rowkeys = Object.keys(row)
+        const rekey = rowkeys.some((k) => table.keyFields.includes(k))
+        if (rekey) {
+          const item = sink.remove(key)
+          return sink.insert({ ...item, ...row } as Item)
+        } else {
+          update(item, row)
+          return item
+        }
+      } else {
+        return sink.insert(row as Item)
+      }
+    },
+    load: sink.insert,
+    parseKey: sink.parseKey ?? ((x) => x as Partial<Item>),
+    parseRow: sink.parseRow ?? ((x) => x as Item),
+    parseUpdate: (x: UpdatedRow) => x.row as Item,
   }
 }
 
@@ -186,4 +243,3 @@ export function assignProps(record: Record<string, any>, itemRecord: Record<stri
     }
   })
 }
-*/

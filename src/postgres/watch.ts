@@ -1,11 +1,19 @@
 import { ClientConfig } from 'pg'
 import createPostgresSubscriber, { Subscriber } from 'pg-listen'
-import { DatabaseListener, UpdatedRow } from '../watch'
+import { DatabaseWatcherSource, UpdatedRow, UpdateType, WatchMethod } from '../watch'
 
-export class PostgresListener implements DatabaseListener {
+export class PostgresTriggerWatcher extends DatabaseWatcherSource {
   subscriber: Subscriber | undefined
 
-  constructor(public config: ClientConfig) {}
+  constructor(public config: ClientConfig, updateType: UpdateType) {
+    super(WatchMethod.Trigger, updateType)
+  }
+
+  async watch(channel: string, callback: (payload: UpdatedRow) => void) {
+    const subscriber = await this.getSubscriber()
+    subscriber.notifications.on(channel, callback)
+    await subscriber.listenTo(channel)
+  }
 
   async getSubscriber() {
     if (!this.subscriber) {
@@ -17,11 +25,4 @@ export class PostgresListener implements DatabaseListener {
     }
     return this.subscriber
   }
-
-  async listen(channel: string, callback: (payload: UpdatedRow) => void) {
-    const subscriber = await this.getSubscriber()
-    subscriber.notifications.on(channel, callback)
-    await subscriber.listenTo(channel)
-  }
 }
-
