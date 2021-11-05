@@ -1,4 +1,4 @@
-DROP TABLE IF EXISTS db_watch_test_db;
+DROP TABLE IF EXISTS db_watch_test;
 
 CREATE TABLE db_watch_test (
     id serial PRIMARY KEY,

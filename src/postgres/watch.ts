@@ -9,6 +9,12 @@ export class PostgresTriggerWatcher extends DatabaseWatcherSource {
     super(WatchMethod.Trigger, updateType)
   }
 
+  async close() {
+    if (!this.subscriber) return
+    await this.subscriber.close()
+    this.subscriber = undefined
+  }
+
   async watch(channel: string, callback: (payload: UpdatedRow) => void) {
     const subscriber = await this.getSubscriber()
     subscriber.notifications.on(channel, callback)

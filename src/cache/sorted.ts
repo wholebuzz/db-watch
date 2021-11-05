@@ -1,9 +1,14 @@
-import { DatabaseTable, DatabaseLoaderSource } from '../load'
-import { DatabaseWatcher, DatabaseWatcherSource, idempotentSinkFromMemorySink, MemoryDatabaseSink } from '../watch'
+import { DatabaseLoaderSource, DatabaseTable } from '../load'
+import {
+  DatabaseWatcher,
+  DatabaseWatcherSource,
+  idempotentSinkFromMemorySink,
+  MemoryDatabaseSink,
+} from '../watch'
 
 export const sorted = require('sorted-array-functions')
 
-export abstract class ArrayCache<Item> implements MemoryDatabaseSink<Item> {
+export class ArrayCache<Item> implements MemoryDatabaseSink<Item> {
   watcher?: DatabaseWatcher<Item>
 
   constructor(public compare: (a: Item, b: Item) => number, public data: Item[] = []) {}
@@ -17,7 +22,11 @@ export abstract class ArrayCache<Item> implements MemoryDatabaseSink<Item> {
       source,
       watcherSource,
       table,
-      idempotentSinkFromMemorySink(table, this),
+      idempotentSinkFromMemorySink(table, {
+        find: (x) => this.find(x),
+        insert: (x) => this.insert(x),
+        remove: (x) => this.remove(x),
+      }),
       { concurrency: 1 }
     )
   }

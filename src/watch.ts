@@ -124,9 +124,9 @@ export class DatabaseWatcher<Item> extends DatabaseLoader<Item> {
   }
 
   async watch() {
-    this.watcher.watch(
+    await this.watcher.watch(
       this.table.table,
-      this.watcher.updateType == UpdateType.Key
+      this.watcher.updateType === UpdateType.Key
         ? this.delayLoadingWithFetchQueue(() => this.fetchAndUpdate())
         : this.delayLoading((x) => this.handleUpdatedRow(x))
     )
@@ -184,8 +184,9 @@ export class DatabaseWatcher<Item> extends DatabaseLoader<Item> {
     if (
       this.options.shard &&
       !shardMatchText(update.key[this.table.shardField ?? ''] ?? '', this.options.shard)
-    )
+    ) {
       return null
+    }
     if (this.sink.filterUpdate && !this.sink.filterUpdate(update)) return null
     const key = this.sink.parseKey(update.key)
     const row = this.sink.parseUpdate(update)
@@ -215,8 +216,8 @@ export function idempotentSinkFromMemorySink<Item>(
         const rowkeys = Object.keys(row)
         const rekey = rowkeys.some((k) => table.keyFields.includes(k))
         if (rekey) {
-          const item = sink.remove(key)
-          return sink.insert({ ...item, ...row } as Item)
+          const removedItem = sink.remove(key)
+          return sink.insert({ ...(removedItem ?? item), ...row })
         } else {
           update(item, row)
           return item

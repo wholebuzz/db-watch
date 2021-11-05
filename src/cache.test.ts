@@ -1,18 +1,14 @@
 import { LocalFileSystem } from '@wholebuzz/fs'
-import fs from 'fs'
+import { DatabaseCopySourceType, DatabaseCopyTargetType, dbcp, knexPoolConfig } from 'dbcp'
 import hasha from 'hasha'
 import Knex from 'knex'
 import rimraf from 'rimraf'
 import { Readable } from 'stream'
 import { promisify } from 'util'
-import {
-  DatabaseCopySourceType,
-  DatabaseCopyTargetType,
-  dbcp,
-  knexPoolConfig,
-} from 'dbcp'
-
-const zlib = require('zlib')
+import { ArrayCache } from './cache/sorted'
+import { KnexLoaderSource } from './knex'
+import { PostgresTriggerWatcher } from './postgres/watch'
+import { UpdateType } from './watch'
 
 const fileSystem = new LocalFileSystem()
 const hashOptions = { algorithm: 'md5' }
@@ -22,6 +18,24 @@ const testSchemaTableName = 'db_watch_test'
 const testSchemaUrl = './test/schema.sql'
 const testNDJsonUrl = './test/test.jsonl.gz'
 const testNDJsonHash = '9c51a21c2d8a717f3def11864b62378e'
+
+interface TestData {
+  id: number
+  date: Date
+  guid: string
+  link: string
+  feed: string
+  props: Record<string, any>
+  tags: Record<string, any>
+}
+
+const testDataSort = (a: TestData, b: TestData) => {
+  const dateDiff = b.date.getTime() - a.date.getTime()
+  if (dateDiff) return dateDiff
+  if (a.guid < b.guid) return -1
+  else if (b.guid < a.guid) return 1
+  else return 0
+}
 
 /*
 const mysqlConnection = {
@@ -78,13 +92,7 @@ const postgresTarget = {
   targetTable: testSchemaTableName,
 }
 
-it('Should hash test data as string', async () => {
-  expect(
-    hasha(
-      await readableToString(fs.createReadStream(testNDJsonUrl).pipe(zlib.createGunzip())),
-      hashOptions
-    )
-  ).toBe(testNDJsonHash)
+it('Should hash test data', async () => {
   expect(
     hasha(
       await readableToString((await fileSystem.openReadableFile(testNDJsonUrl)).finish()),
@@ -93,8 +101,7 @@ it('Should hash test data as string', async () => {
   ).toBe(testNDJsonHash)
 })
 
-
-it('Should restore to and dump from Postgres to ND-JSON', async () => {
+it('Should load test data to PostgreSQL', async () => {
   // Load schema
   await dbcp({
     fileSystem,
@@ -130,6 +137,32 @@ it('Should restore to and dump from Postgres to ND-JSON', async () => {
   })
   expect(await fileSystem.fileExists(targetNDJsonUrl)).toBe(true)
   expect(await hashFile(targetNDJsonUrl)).toBe(testNDJsonHash)
+})
+
+it('Should load and dump ArrayCache', async () => {
+  const cache = new ArrayCache<TestData>(testDataSort, [])
+  expect(cache.data.length).toBe(0)
+
+  const knex = Knex({
+    client: 'postgresql',
+    connection: postgresConnection,
+    pool: knexPoolConfig,
+  } as any)
+  const loaderSource = new KnexLoaderSource(knex)
+  const watcherSource = new PostgresTriggerWatcher(postgresConnection, UpdateType.Key)
+  await cache.connect(
+    {
+      table: 'db_watch_test',
+      keyFields: ['date', 'guid'],
+      versionField: 'last_updated',
+    },
+    loaderSource,
+    watcherSource
+  )
+  await cache.watcher?.init()
+  expect(cache.data.length).toBe(10000)
+  await watcherSource.close()
+  await knex.destroy()
 })
 
 async function hashFile(path: string) {
