@@ -1023,10 +1023,10 @@
   dependencies:
     "@types/yargs-parser" "*"
 
-"@wholebuzz/fs@^0.0.20":
-  version "0.0.20"
-  resolved "https://registry.yarnpkg.com/@wholebuzz/fs/-/fs-0.0.20.tgz#aa9418c48669dc001a0839f44b490e4b07e8b3b8"
-  integrity sha512-xAaO6Z6+soYwGbIy0BxVkglpgkjTQPlo5H107hYgQsKpTfY/IxDxhpnv6vMIc41lKUi4A2tN7JUMbzrNcQG/cg==
+"@wholebuzz/fs@^0.0.21":
+  version "0.0.21"
+  resolved "https://registry.yarnpkg.com/@wholebuzz/fs/-/fs-0.0.21.tgz#00644df98dc0a5e53458935f6d08cadc2a0e64ce"
+  integrity sha512-Esdf7NPO1RjLnLK2kzaULIn/GPftRBSfbMZQ1Esm3HoBmmvUHrP/Q2Biiye1lwGmfNgiqfhl2K0KVYFuIHbfMA==
   dependencies:
     JSONStream "^1.3.5"
     ndjson "^2.0.0"
@@ -1850,16 +1850,16 @@ db-watch@^0.0.4:
     through2 "^3.0.1"
     tree-stream "^1.0.13"
 
-dbcp@^1.0.1:
-  version "1.0.1"
-  resolved "https://registry.yarnpkg.com/dbcp/-/dbcp-1.0.1.tgz#32074d8816860e1bed9184b32628378d53ab95cf"
-  integrity sha512-mgCetoIH6EEZxF22BsfjTwhosR+db8lXHCG8InBmN4JQMSX+VKnP0p/yDupOrd7oBj5ABDL4hA6waxrWa9jXag==
+dbcp@^1.0.2:
+  version "1.0.2"
+  resolved "https://registry.yarnpkg.com/dbcp/-/dbcp-1.0.2.tgz#49a412ef70f8835e6ed52399271acd49583ffaf5"
+  integrity sha512-4v6m1J0xAXp6nkJH7RJ7RLyCKf1Yst2q0ursIinIcSr1SUyj/liw5CkOVQSLb6b4yCblWKcK5ZwKzxXV0ZRzFQ==
   dependencies:
     "@azure/identity" "^2.0.0"
     "@azure/storage-blob" "^12.8.0"
     "@google-cloud/storage" "^5.8.1"
     "@marsaud/smb2" "^0.18.0"
-    "@wholebuzz/fs" "^0.0.20"
+    "@wholebuzz/fs" "^0.0.21"
     aws-sdk "^2.975.0"
     axios "^0.20.0"
     batch2 "^2.0.0"

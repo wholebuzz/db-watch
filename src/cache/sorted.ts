@@ -1,4 +1,4 @@
-import { DatabaseLoaderSource, DatabaseTable } from '../load'
+import { DatabaseLoaderSource, DatabaseTable, DatabaseTableParser } from '../load'
 import {
   DatabaseWatcher,
   DatabaseWatcherSource,
@@ -16,17 +16,22 @@ export class ArrayCache<Item> implements MemoryDatabaseSink<Item> {
   async connect(
     table: DatabaseTable,
     source: DatabaseLoaderSource,
-    watcherSource: DatabaseWatcherSource
+    watcherSource: DatabaseWatcherSource,
+    parser?: Partial<DatabaseTableParser<Item>>
   ) {
     this.watcher = new DatabaseWatcher<Item>(
       source,
       watcherSource,
       table,
-      idempotentSinkFromMemorySink(table, {
-        find: (x) => this.find(x),
-        insert: (x) => this.insert(x),
-        remove: (x) => this.remove(x),
-      }),
+      idempotentSinkFromMemorySink<Item>(
+        table,
+        {
+          find: (x) => this.find(x),
+          insert: (x) => this.insert(x),
+          remove: (x) => this.remove(x),
+        },
+        parser
+      ),
       { concurrency: 1 }
     )
   }

@@ -1,6 +1,14 @@
 import pSettle from 'p-settle'
 import { dump } from './dump'
-import { DatabaseLoaderSource, DatabaseTable, Shard, shardMatchText } from './load'
+import {
+  DatabaseLoaderSource,
+  DatabaseTable,
+  DatabaseTableParser,
+  Shard,
+  shardMatchText,
+  UpdatedRow,
+  UpdateOp,
+} from './load'
 
 export enum WatchMethod {
   Log,
@@ -21,25 +29,6 @@ export enum UpdateType {
   Key,
 }
 
-export enum UpdateOp {
-  Insert = 'INSERT',
-  Update = 'UPDATE',
-  Delete = 'DELETE',
-}
-
-export interface UpdatedRow {
-  op: UpdateOp
-  table?: string
-  key: Record<string, any>
-  row?: Record<string, any>
-  updated?: string[]
-}
-
-export interface DatabaseTableParser<Item> {
-  parseRow: (row: Record<string, any>) => Item
-  parseKey: (key: Record<string, any>) => Partial<Item>
-}
-
 export interface IdempotentDatabaseSink<Item> extends DatabaseTableParser<Item> {
   load: (item: Item) => void
   upsert: (key: Partial<Item>, value: Partial<Item> | null) => Item | null
@@ -54,8 +43,6 @@ export interface MemoryDatabaseSink<Item> extends Partial<DatabaseTableParser<It
 }
 
 export interface DatabaseWatcherSink<Item> extends IdempotentDatabaseSink<Item> {
-  parseUpdate: (update: UpdatedRow) => Partial<Item>
-  fetchUpdate?: (update: UpdatedRow) => Promise<Item>
   filterUpdate?: (item: UpdatedRow) => boolean
 }
 
@@ -161,10 +148,10 @@ export class DatabaseWatcher<Item> extends DatabaseLoader<Item> {
         updates
           .filter(this.sink?.filterUpdate ?? ((x) => x))
           .map(
-            (x) => () =>
-              x.op === UpdateOp.Delete
-                ? Promise.resolve(this.sink.parseUpdate(x))
-                : this.sink.fetchUpdate!(x)
+            (update) => () =>
+              update.op === UpdateOp.Delete
+                ? Promise.resolve(this.sink.parseUpdate(update))
+                : this.source.fetch(this.table, update)
           ),
         { concurrency: this.options.concurrency }
       )
@@ -188,7 +175,7 @@ export class DatabaseWatcher<Item> extends DatabaseLoader<Item> {
       return null
     }
     if (this.sink.filterUpdate && !this.sink.filterUpdate(update)) return null
-    const key = this.sink.parseKey(update.key)
+    const key = this.sink.parseRow(update.key)
     const row = this.sink.parseUpdate(update)
 
     switch (update.op) {
@@ -204,10 +191,12 @@ export class DatabaseWatcher<Item> extends DatabaseLoader<Item> {
 
 export function idempotentSinkFromMemorySink<Item>(
   table: DatabaseTable,
-  sink: MemoryDatabaseSink<Item>
+  sink: MemoryDatabaseSink<Item>,
+  watcherOptions?: Partial<DatabaseWatcherSink<Item>>
 ): DatabaseWatcherSink<Item> {
   const update = sink.update ?? assignProps
   return {
+    ...watcherOptions,
     upsert: (key: Partial<Item>, row: Partial<Item> | null) => {
       const item = sink.find(key)
       if (sink.updated) sink.updated(item, row)
@@ -227,8 +216,8 @@ export function idempotentSinkFromMemorySink<Item>(
       }
     },
     load: sink.insert,
-    parseKey: sink.parseKey ?? ((x) => x as Partial<Item>),
-    parseRow: sink.parseRow ?? ((x) => x as Item),
+    parseKey: watcherOptions?.parseKey ?? sink.parseKey ?? ((x) => x as Partial<Item>),
+    parseRow: watcherOptions?.parseRow ?? sink.parseRow ?? ((x) => x as Item),
     parseUpdate: (x: UpdatedRow) => x.row as Item,
   }
 }

@@ -1,6 +1,7 @@
 import { ClientConfig } from 'pg'
 import createPostgresSubscriber, { Subscriber } from 'pg-listen'
-import { DatabaseWatcherSource, UpdatedRow, UpdateType, WatchMethod } from '../watch'
+import { UpdatedRow } from '../load'
+import { DatabaseWatcherSource, UpdateType, WatchMethod } from '../watch'
 
 export class PostgresTriggerWatcher extends DatabaseWatcherSource {
   subscriber: Subscriber | undefined
@@ -15,7 +16,8 @@ export class PostgresTriggerWatcher extends DatabaseWatcherSource {
     this.subscriber = undefined
   }
 
-  async watch(channel: string, callback: (payload: UpdatedRow) => void) {
+  async watch(table: string, callback: (payload: UpdatedRow) => void) {
+    const channel = `${table}_updated`
     const subscriber = await this.getSubscriber()
     subscriber.notifications.on(channel, callback)
     await subscriber.listenTo(channel)
