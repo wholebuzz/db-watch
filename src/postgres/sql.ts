@@ -1,5 +1,13 @@
+export function shardIntegerSQL(column: string, modulus: string | number) {
+  return `mod(${column}, ${modulus})`
+}
+
+export function shardTextSQL(column: string, modulus: string | number) {
+  return `mod(('x' || right(md5(${column}), 4))::bit(16)::int, ${modulus})`
+}
+
 export const setupQueries = [
-  'CREATE EXTENSION hstore',
+  'CREATE EXTENSION IF NOT EXISTS hstore',
 
   `CREATE OR REPLACE FUNCTION jsonb_to_hstore(jsonb)
      RETURNS hstore AS
@@ -11,13 +19,7 @@ export const setupQueries = [
   `CREATE OR REPLACE FUNCTION shard(text, int)
      RETURNS int AS
    $func$
-     SELECT mod(('x' || right(md5($1), 4))::bit(16)::int, $2)
-   $func$ LANGUAGE sql IMMUTABLE STRICT`,
-
-  `CREATE OR REPLACE FUNCTION link_from_url(text)
-     RETURNS text AS
-   $func$
-     SELECT SUBSTR($1, STRPOS($1, '://') + 3)
+     ${shardTextSQL('$1', '$2')}
    $func$ LANGUAGE sql IMMUTABLE STRICT`,
 ]
 

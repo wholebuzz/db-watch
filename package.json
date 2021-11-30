@@ -1,7 +1,7 @@
 {
   "name": "db-watch",
-  "version": "0.0.4",
-  "description": "Create Postgres triggers and watch notify listeners",
+  "version": "0.0.5",
+  "description": "Database replication, inlcuding Postgres triggers and monitoring with notify listeners",
   "author": "wholebuzz",
   "license": "Apache-2.0",
   "repository": {
@@ -29,7 +29,7 @@
     "p-settle": "^4.1.1",
     "sorted-array-functions": "^1.3.0",
     "through2": "^3.0.1",
-    "tree-stream": "^1.0.13"
+    "tree-stream": "^1.0.14"
   },
   "devDependencies": {
     "@types/jest": "^26.0.22",
