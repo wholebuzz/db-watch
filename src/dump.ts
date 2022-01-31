@@ -1,5 +1,4 @@
 import { Transform } from 'stream'
-import through2 from 'through2'
 import { pumpReadable, ReadableStreamTree } from 'tree-stream'
 
 export const sorted = require('sorted-array-functions')
@@ -31,9 +30,12 @@ export function newSortedArraySink<X>(
 export function dump<X>(stream: ReadableStreamTree, sink: (x: X) => void): Promise<void> {
   return dumpStream(
     stream,
-    through2.obj((data: X, _enc, callback) => {
-      sink(data)
-      callback()
+    new Transform({
+      objectMode: true,
+      transform(data: X, _enc, callback) {
+        sink(data)
+        callback()
+      }
     })
   )
 }

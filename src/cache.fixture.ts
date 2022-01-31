@@ -31,6 +31,5 @@ export async function newCache() {
       parseUpdate: parseTestDataUpdate,
     }
   )
-  //  parseTestDataUpdate
   return { cache, loaderSource, watcherSource }
 }
